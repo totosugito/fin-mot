@@ -53,10 +53,6 @@ const protectedRoute: FastifyPluginAsyncTypebox = async (app) => {
           success: Type.Boolean(),
           message: Type.String()
         }),
-        401: Type.Object({
-          success: Type.Boolean(),
-          message: Type.String()
-        }),
         403: Type.Object({
           success: Type.Boolean(),
           message: Type.String()
@@ -76,7 +72,6 @@ const protectedRoute: FastifyPluginAsyncTypebox = async (app) => {
         500: Type.Object({
           success: Type.Boolean(),
           message: Type.String(),
-          error: Type.Optional(Type.String())
         })
     }
   },
