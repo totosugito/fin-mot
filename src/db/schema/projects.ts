@@ -36,6 +36,7 @@ export const projects = pgTable(
     extra: jsonb("extra").default(sql`'{}'::jsonb`),
     type: PgEnumProjectType("type").notNull().default(EnumProjectType.project),
     status: PgEnumProjectStatus("status").notNull().default(EnumProjectStatus.draft),
+    tags: text("tags").array().notNull().default(sql`'{}'`),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
   },
@@ -67,8 +68,9 @@ export const projectEvents = pgTable(
 
     // Now explicitly an ltree type in DB
     path: ltree("path").notNull(),
-
     depth: integer("depth").generatedAlwaysAs(sql`nlevel(path) - 1`),
+
+    note: text("note").default(""),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
   },
