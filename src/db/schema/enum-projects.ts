@@ -1,5 +1,11 @@
 import { pgEnum } from "drizzle-orm/pg-core";
 
+export const EnumProjectType = {
+  project: "project",
+  template: "template",
+};
+export const PgEnumProjectType = pgEnum('project_type', Object.values(EnumProjectType) as [string, ...string[]]);
+
 export const EnumProjectStatus = {
   draft: "draft",
   completed: "completed",

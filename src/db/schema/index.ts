@@ -3,6 +3,7 @@ import {
   PgEnumUserRole, PgEnumDataStatus, PgEnumDeviceType, PgEnumEventStatus, PgEnumDataType,
 } from './enum-db.ts';
 import {
+  EnumProjectType, PgEnumProjectType,
   EnumProjectStatus, EnumProjectEventType,
   PgEnumProjectStatus, PgEnumProjectEventType
 } from './enum-projects.ts';
@@ -17,8 +18,10 @@ export const schema = {
 };
 
 export {
-  EnumUserRole, EnumDataStatus, EnumEventStatus, EnumDeviceType, EnumDataType, EnumProjectStatus, EnumProjectEventType,
-  PgEnumUserRole, PgEnumDataStatus, PgEnumDeviceType, PgEnumEventStatus, PgEnumDataType, PgEnumProjectStatus, PgEnumProjectEventType,
+  EnumUserRole, EnumDataStatus, EnumEventStatus, EnumDeviceType, EnumDataType,
+  EnumProjectType, PgEnumProjectType, EnumProjectStatus, EnumProjectEventType,
+  PgEnumUserRole, PgEnumDataStatus, PgEnumDeviceType, PgEnumEventStatus,
+  PgEnumDataType, PgEnumProjectStatus, PgEnumProjectEventType,
   users, accounts, sessions, verifications,
   projects, projectEvents, projectsCost
 }

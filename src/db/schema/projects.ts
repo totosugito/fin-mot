@@ -13,7 +13,14 @@ import {
 import { sql } from "drizzle-orm";
 import {users} from "./auth.ts";
 import {ltree} from "./custom/ltree.ts";
-import {EnumProjectEventType, EnumProjectStatus, PgEnumProjectEventType, PgEnumProjectStatus} from "./enum-projects.ts";
+import {
+  EnumProjectEventType,
+  EnumProjectStatus,
+  EnumProjectType,
+  PgEnumProjectEventType,
+  PgEnumProjectStatus,
+  PgEnumProjectType
+} from "./enum-projects.ts";
 
 
 // ===== PROJECTS TABLE =====
@@ -27,6 +34,7 @@ export const projects = pgTable(
     name: text("name").notNull(),
     description: text("description"),
     extra: jsonb("extra").default(sql`'{}'::jsonb`),
+    type: PgEnumProjectType("type").notNull().default(EnumProjectType.project),
     status: PgEnumProjectStatus("status").notNull().default(EnumProjectStatus.draft),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
@@ -54,10 +62,10 @@ export const projectEvents = pgTable(
     name: text("name").notNull(),
     description: text("description"),
     extra: jsonb("extra").default(sql`'{}'::jsonb`),
-    type: PgEnumProjectEventType("type").notNull().default(EnumProjectEventType.folder),
+    eventType: PgEnumProjectEventType("event_type").notNull().default(EnumProjectEventType.folder),
     sortOrder: integer("sort_order").default(0),
 
-    // 🚀 Now explicitly an ltree type in DB
+    // Now explicitly an ltree type in DB
     path: ltree("path").notNull(),
 
     depth: integer("depth").generatedAlwaysAs(sql`nlevel(path) - 1`),
@@ -81,24 +89,24 @@ export const projectsCost = pgTable(
       .notNull()
       .references(() => projectEvents.id, { onDelete: "cascade" }),
 
-    budgetIncomeCurrency: char("budget_income_currency", { length: 3 }),
-    budgetIncome: numeric("budget_income", { precision: 18, scale: 2 }),
+    budgetIncomeCurrency: char("budget_income_currency", { length: 3 }).default("IDR"),
+    budgetIncome: numeric("budget_income", { precision: 18, scale: 2 }).default("0"),
 
-    budgetExpenseCurrency: char("budget_expense_currency", { length: 3 }),
-    budgetExpense: numeric("budget_expense", { precision: 18, scale: 2 }),
+    budgetExpenseCurrency: char("budget_expense_currency", { length: 3 }).default("IDR"),
+    budgetExpense: numeric("budget_expense", { precision: 18, scale: 2 }).default("0"),
 
-    realIncomeCurrency: char("real_income_currency", { length: 3 }),
-    realIncome: numeric("real_income", { precision: 18, scale: 2 }),
+    realIncomeCurrency: char("real_income_currency", { length: 3 }).default("IDR"),
+    realIncome: numeric("real_income", { precision: 18, scale: 2 }).default("0"),
     realIncomeCreatedAt: timestamp("real_income_created_at", {
       withTimezone: true,
     }),
 
-    realExpenseCurrency: char("real_expense_currency", { length: 3 }),
-    realExpense: numeric("real_expense", { precision: 18, scale: 2 }),
+    realExpenseCurrency: char("real_expense_currency", { length: 3 }).default("IDR"),
+    realExpense: numeric("real_expense", { precision: 18, scale: 2 }).default("0"),
     realExpenseCreatedAt: timestamp("real_expense_created_at", {
       withTimezone: true,
     }),
-
+    eventSummary: jsonb("event_summary").default(sql`'{}'::jsonb`),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
   },

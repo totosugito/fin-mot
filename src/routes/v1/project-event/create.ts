@@ -2,11 +2,23 @@ import type {FastifyPluginAsyncTypebox} from "@fastify/type-provider-typebox";
 import {withErrorHandler} from "../../../utils/withErrorHandler.ts";
 import {db} from "../../../db/index.ts";
 import {sql} from 'drizzle-orm';
-import {Type} from '@sinclair/typebox';
-import {projectEvents, projects, EnumProjectEventType} from "../../../db/schema/index.ts";
+import {type Static, Type} from '@sinclair/typebox';
+import {projectEvents, projects, EnumProjectEventType, projectsCost} from "../../../db/schema/index.ts";
 import {and, eq} from 'drizzle-orm';
 import {randomUUID} from "node:crypto";
-import {computeEventCost} from "../../../services/project-event/update-cost.ts";
+import {computeParentCost} from "../../../services/project-event/update-cost.ts";
+import {eventCost} from "../../../types/project-event.ts";
+
+const bodySchema = Type.Object({
+  projectId: Type.String({format: 'uuid'}),
+  parentId: Type.String({format: 'uuid'}),
+  name: Type.String(),
+  description: Type.Optional(Type.String()),
+  eventType: Type.Optional(Type.Enum(EnumProjectEventType)),
+  sortOrder: Type.Optional(Type.Number({minimum: 0})),
+  extra: Type.Optional(Type.Record(Type.String(), Type.Any())),
+  eventCost: eventCost
+});
 
 const projectEventRoutes: FastifyPluginAsyncTypebox = async (app) => {
   app.route({
@@ -16,58 +28,18 @@ const projectEventRoutes: FastifyPluginAsyncTypebox = async (app) => {
       tags: ['Project Event'],
       summary: 'Create a new project event',
       description: 'Create a new project event with the provided details',
-      body: Type.Object({
-        projectId: Type.String({format: 'uuid'}),
-        parentId: Type.Optional(Type.String({format: 'uuid'})),
-        name: Type.String(),
-        description: Type.Optional(Type.String()),
-        type: Type.Optional(Type.Enum(EnumProjectEventType)),
-        sortOrder: Type.Optional(Type.Number({minimum: 0})),
-        extra: Type.Optional(Type.Record(Type.String(), Type.Any()))
-      }),
-      // response: {
-      //   201: Type.Object({
-      //     success: Type.Boolean(),
-      //     data: Type.Object({
-      //       id: Type.String({format: 'uuid'}),
-      //       projectId: Type.String({format: 'uuid'}),
-      //       parentId: Type.Optional(Type.String({format: 'uuid'})),
-      //       userId: Type.String({format: 'uuid'}),
-      //       name: Type.String(),
-      //       description: Type.Optional(Type.String()),
-      //       type: Type.String(),
-      //       sortOrder: Type.Number(),
-      //       path: Type.String(),
-      //       depth: Type.Number(),
-      //       extra: Type.Optional(Type.Record(Type.String(), Type.Any())),
-      //       createdAt: Type.String({format: 'date-time'}),
-      //       updatedAt: Type.String({format: 'date-time'})
-      //     })
-      //   }),
-      //   400: Type.Object({
-      //     success: Type.Boolean(),
-      //     message: Type.String()
-      //   }),
-      //   404: Type.Object({
-      //     success: Type.Boolean(),
-      //     message: Type.String()
-      //   }),
-      //   500: Type.Object({
-      //     success: Type.Boolean(),
-      //     message: Type.String()
-      //   })
-      // }
+      body: bodySchema,
     },
     handler: withErrorHandler(async (req, reply) => {
-      const {projectId, parentId, name, description, type, sortOrder, extra} = req.body as {
-        projectId: string;
-        parentId?: string;
-        name: string;
-        description?: string;
-        type?: string;
-        sortOrder?: number;
-        extra?: Record<string, any>;
-      };
+      const body = req.body as Static<typeof bodySchema>;
+      const {projectId, parentId, name, description, eventType, sortOrder, extra, eventCost} = body;
+
+      if (!projectId || !parentId) {
+        return reply.status(400).send({
+          success: false,
+          message: 'Project and parent ID is required'
+        });
+      }
 
       // Check if project exists
       const project = await db.query.projects.findFirst({
@@ -81,27 +53,41 @@ const projectEventRoutes: FastifyPluginAsyncTypebox = async (app) => {
         });
       }
 
-      // If parentId is provided, verify it exists and belongs to the same project
-      let parentPath = '';
-      if (parentId) {
-        const parent = await db.query.projectEvents.findFirst({
-          where: and(
-            eq(projectEvents.id, parentId),
-            eq(projectEvents.projectId, projectId)
-          ),
-          columns: {
-            path: true
-          }
+      // check if parent id is valid
+      const parentEvent = await db.query.projectEvents.findFirst({
+        where: eq(projectEvents.id, parentId)
+      });
+      if (!parentEvent) {
+        return reply.status(404).send({
+          success: false,
+          message: 'Parent event not found'
         });
-
-        if (!parent) {
-          return reply.status(404).send({
-            success: false,
-            message: 'Parent event not found or does not belong to this project'
-          });
-        }
-        parentPath = parent.path;
       }
+      if (parentEvent.eventType !== EnumProjectEventType.folder) {
+        return reply.status(400).send({
+          success: false,
+          message: 'Parent event must be a folder'
+        });
+      }
+
+      // If parentId is provided, verify it exists and belongs to the same project
+      const parent = await db.query.projectEvents.findFirst({
+        where: and(
+          eq(projectEvents.id, parentId),
+          eq(projectEvents.projectId, projectId)
+        ),
+        columns: {
+          path: true
+        }
+      });
+
+      if (!parent) {
+        return reply.status(404).send({
+          success: false,
+          message: 'Parent event not found or does not belong to this project'
+        });
+      }
+      let parentPath = parent.path;
 
       const userId = req.session?.user?.id;
 
@@ -113,30 +99,60 @@ const projectEventRoutes: FastifyPluginAsyncTypebox = async (app) => {
       const [newEvent] = await db.insert(projectEvents).values({
         projectId,
         userId,
-        parentId: parentId || null,
+        parentId,
         name,
         description: description || null,
-        type: type || EnumProjectEventType.folder,
+        eventType: eventType || EnumProjectEventType.folder,
         sortOrder: sortOrder || 0,
         path: sql`${newPath}::ltree`,
         extra: extra || {},
       }).returning({
         id: projectEvents.id,
+        eventType: projectEvents.eventType
       });
 
-      if(!newEvent) {
+      if (!newEvent) {
         return reply.status(500).send({
           success: false,
-          message: 'Failed to create project event'
+          message: 'Failed to create event'
         });
       }
 
-      // Update the cost for the project
-      if(parentId && type === EnumProjectEventType.folder) {
-        await computeEventCost(newEvent.id);
+      if (eventType === EnumProjectEventType.folder) {
+        const result = await db.insert(projectsCost).values({
+          projectEventId: newEvent.id
+        }).returning();
+
+        if (!result || result.length === 0) {
+          reply.status(500).send({
+            success: false,
+            message: 'Failed to create event cost'
+          });
+        }
       }
       else {
-        await computeEventCost(newEvent.id);
+        const result = await db.insert(projectsCost).values({
+          projectEventId: newEvent.id,
+          budgetIncomeCurrency: eventCost?.budgetIncomeCurrency || 'IDR',
+          budgetIncome: eventCost?.budgetIncome || '0',
+          budgetExpenseCurrency: eventCost?.budgetExpenseCurrency || 'IDR',
+          budgetExpense: eventCost?.budgetExpense || '0',
+          realIncomeCurrency: eventCost?.realIncomeCurrency || 'IDR',
+          realIncome: eventCost?.realIncome || '0',
+          realIncomeCreatedAt: eventCost?.realIncomeCreatedAt ? new Date(eventCost.realIncomeCreatedAt) : new Date(),
+          realExpenseCurrency: eventCost?.realExpenseCurrency || 'IDR',
+          realExpense: eventCost?.realExpense || '0',
+          realExpenseCreatedAt: eventCost?.realExpenseCreatedAt ? new Date(eventCost.realExpenseCreatedAt) : new Date(),
+        }).returning();
+
+        if (!result || result.length === 0) {
+          reply.status(500).send({
+            success: false,
+            message: 'Failed to create event cost'
+          });
+        }
+
+        await computeParentCost(parentId);
       }
 
       // Return the new project event
@@ -149,7 +165,7 @@ const projectEventRoutes: FastifyPluginAsyncTypebox = async (app) => {
           userId: true,
           name: true,
           description: true,
-          type: true,
+          eventType: true,
           sortOrder: true,
           path: true,
           depth: true,
@@ -158,7 +174,8 @@ const projectEventRoutes: FastifyPluginAsyncTypebox = async (app) => {
           updatedAt: true,
         },
       });
-      if(!event) {
+
+      if (!event) {
         return reply.status(500).send({
           success: false,
           message: 'Failed to create project event'

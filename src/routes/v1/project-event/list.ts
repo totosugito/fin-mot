@@ -12,14 +12,14 @@ const projectEventRoutes: FastifyPluginAsyncTypebox = async (app) => {
     method: 'GET',
     schema: {
       tags: ['Project Events'],
-      summary: 'Get list of project events',
+      summary: '',
       description: 'Get list of project events with pagination, sorting, and filtering',
       querystring: Type.Object({
         projectId: Type.String({ format: 'uuid' }),
         page: Type.Optional(Type.Number({ minimum: 1, default: 1 })),
         limit: Type.Optional(Type.Number({ minimum: 1, maximum: 100, default: 10 })),
         sort: Type.Optional(Type.String({
-          enum: ['name', 'type', 'createdAt', 'updatedAt'],
+          enum: ['name', 'evenType', 'createdAt', 'updatedAt'],
           default: 'createdAt'
         })),
         order: Type.Optional(Type.String({
@@ -27,7 +27,7 @@ const projectEventRoutes: FastifyPluginAsyncTypebox = async (app) => {
           default: 'desc'
         })),
         search: Type.Optional(Type.String()),
-        type: Type.Optional(Type.String({ enum: Object.values(EnumProjectEventType) })),
+        evenType: Type.Optional(Type.String({ enum: Object.values(EnumProjectEventType) })),
       }),
       response: {
         200: Type.Object({
@@ -39,7 +39,7 @@ const projectEventRoutes: FastifyPluginAsyncTypebox = async (app) => {
             parentId: Type.Optional(Type.String({ format: 'uuid' })),
             name: Type.String(),
             description: Type.Union([Type.String(), Type.Null()]),
-            type: Type.String({ enum: Object.values(EnumProjectEventType) }),
+            evenType: Type.String({ enum: Object.values(EnumProjectEventType) }),
             extra: Type.Record(Type.String(), Type.Any()),
             sortOrder: Type.Number(),
             path: Type.String(),
@@ -64,7 +64,7 @@ const projectEventRoutes: FastifyPluginAsyncTypebox = async (app) => {
         sort = 'createdAt',
         order = 'desc',
         search,
-        type,
+        eventType: type,
       } = req.query as {
         projectId: string;
         page?: number;
@@ -72,7 +72,7 @@ const projectEventRoutes: FastifyPluginAsyncTypebox = async (app) => {
         sort?: string;
         order?: string;
         search?: string;
-        type?: string;
+        eventType?: string;
       };
 
       // Create sort expression
@@ -82,8 +82,8 @@ const projectEventRoutes: FastifyPluginAsyncTypebox = async (app) => {
         case 'name':
           sortColumn = projectEvents.name;
           break;
-        case 'type':
-          sortColumn = projectEvents.type;
+        case 'eventType':
+          sortColumn = projectEvents.eventType;
           break;
         case 'createdAt':
           sortColumn = projectEvents.createdAt;
@@ -110,7 +110,7 @@ const projectEventRoutes: FastifyPluginAsyncTypebox = async (app) => {
       }
 
       if (type) {
-        conditions.push(eq(projectEvents.type, type as any));
+        conditions.push(eq(projectEvents.eventType, type as any));
       }
 
       // Get total count
@@ -135,16 +135,13 @@ const projectEventRoutes: FastifyPluginAsyncTypebox = async (app) => {
         success: true,
         data: events.map(event => ({
           ...event,
-          // Convert Date objects to ISO strings
           createdAt: event.createdAt?.toISOString() ?? new Date().toISOString(),
           updatedAt: event.updatedAt?.toISOString() ?? new Date().toISOString(),
-          // Ensure required fields have default values if null
           sortOrder: event.sortOrder ?? 0,
+          evenType: event.eventType,
           path: event.path ?? '',
           depth: event.depth ?? 0,
-          // Convert null parentId to undefined to match the schema
           parentId: event.parentId ?? undefined,
-          // Ensure extra is always an object
           extra: event.extra ?? {}
         })),
         meta: {

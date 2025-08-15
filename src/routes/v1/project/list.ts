@@ -2,9 +2,9 @@ import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { Type } from "@sinclair/typebox";
 import { and, asc, desc, eq, like, or, type SQL, sql, type SQLWrapper } from "drizzle-orm";
 import { db } from "../../../db/index.ts";
-import { projects } from "../../../db/schema/projects.ts";
+import { projects, projectEvents, projectsCost } from "../../../db/schema/projects.ts";
 import { withErrorHandler } from "../../../utils/withErrorHandler.ts";
-import {EnumProjectStatus, EnumUserRole} from "../../../db/schema/index.ts";
+import { EnumProjectStatus, EnumProjectType, EnumUserRole } from "../../../db/schema/index.ts";
 
 const projectRoutes: FastifyPluginAsyncTypebox = async (app) => {
   app.route({
@@ -27,6 +27,7 @@ const projectRoutes: FastifyPluginAsyncTypebox = async (app) => {
         })),
         search: Type.Optional(Type.String()),
         status: Type.Optional(Type.String({ enum: Object.values(EnumProjectStatus) })),
+        type: Type.Optional(Type.String({ enum: Object.values(EnumProjectType) })),
       }),
       response: {
         200: Type.Object({
@@ -37,6 +38,7 @@ const projectRoutes: FastifyPluginAsyncTypebox = async (app) => {
             name: Type.String(),
             description: Type.Union([Type.String(), Type.Null()]),
             status: Type.String({ enum: Object.values(EnumProjectStatus) }),
+            cost: Type.Union([Type.Record(Type.String(), Type.Any()), Type.Null()]),
             extra: Type.Record(Type.String(), Type.Any()),
             createdAt: Type.String({ format: 'date-time' }),
             updatedAt: Type.String({ format: 'date-time' })
@@ -58,6 +60,7 @@ const projectRoutes: FastifyPluginAsyncTypebox = async (app) => {
         order = 'desc',
         search,
         status,
+        type,
       } = req.query as {
         page?: number;
         limit?: number;
@@ -65,6 +68,7 @@ const projectRoutes: FastifyPluginAsyncTypebox = async (app) => {
         order?: string;
         search?: string;
         status?: string;
+        type?: string;
       };
 
       // Create sort expression
@@ -104,6 +108,9 @@ const projectRoutes: FastifyPluginAsyncTypebox = async (app) => {
       if (status) {
         conditions.push(eq(projects.status, status as any));
       }
+      if (type) {
+        conditions.push(eq(projects.type, type as any));
+      }
 
       // Add user filter (if not admin, only show user's projects)
       const userRole = req.session?.user?.role;
@@ -128,11 +135,25 @@ const projectRoutes: FastifyPluginAsyncTypebox = async (app) => {
           name: projects.name,
           description: projects.description,
           status: projects.status,
+          type: projects.type,
           extra: projects.extra,
+          cost: projectsCost.eventSummary,
           createdAt: projects.createdAt,
           updatedAt: projects.updatedAt
         })
         .from(projects)
+        .leftJoin(
+          projectEvents,
+          and(
+            eq(projectEvents.projectId, projects.id),
+            sql`${projectEvents.parentId} IS NULL` // Ensure root event only
+          )
+        )
+        .leftJoin(
+          projectsCost,
+          eq(projectsCost.projectEventId, projectEvents.id)
+        )
+        .groupBy(projects.id, projectsCost.eventSummary)
         .$dynamic();
 
       // Apply where conditions if any
